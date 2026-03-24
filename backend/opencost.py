@@ -1,19 +1,30 @@
 import requests
 
-OPENCOST_URL = "http://localhost:9003/allocation"
+OPENCOST_URL = "http://localhost:9003/allocation?window=1h"
 
 def get_cost_data():
-    try:
-        res = requests.get(OPENCOST_URL)
-        data = res.json()
+    res = requests.get(OPENCOST_URL, timeout=5)
+    data = res.json()
 
-        workloads = []
-        for k, v in data.get("data", {}).items():
+    workloads = []
+
+    for block in data.get("data", []):
+        for name, value in block.items():
+            namespace = value.get("properties", {}).get("namespace", "unknown")
+
+            # ❗ Skip system pods (optional but recommended)
+            if namespace == "kube-system":
+                continue
+
             workloads.append({
-                "name": k,
-                "cost": round(v.get("cost", 0), 2)
+                "workload": name,
+                "namespace": namespace,
+                "cpuCost": round(value.get("cpuCost", 0), 5),
+                "ramCost": round(value.get("ramCost", 0), 5),
+                "totalCost": round(value.get("totalCost", 0), 5)
             })
 
-        return workloads
-    except Exception as e:
-        return [{"error": str(e)}]
+    # sort highest cost first
+    workloads = sorted(workloads, key=lambda x: x["totalCost"], reverse=True)
+
+    return workloads
